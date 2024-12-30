@@ -13,7 +13,7 @@ class ProductController extends Controller
 {
     //
 
-    
+
 
    public function listProductWithDifferentVariant()
    {
@@ -21,11 +21,11 @@ class ProductController extends Controller
                            ->whereHas('category', function ($query) {
                               $query->where('status', true); // Ensure category is active
                            })
-                           ->orderBy('created_at', 'desc') 
+                           ->orderBy('created_at', 'desc')
                            ->get();
 
       return response()->json($products, 200);
-      
+
    }
 
    public function ProductSuggestionInPurchase()
@@ -39,7 +39,7 @@ class ProductController extends Controller
            ->map(function ($product) {
                // Initialize an array to collect units
                $units = collect();
-   
+
                // Add the base unit if available
                if ($product->baseUnit) {
                    $units->push([
@@ -48,7 +48,7 @@ class ProductController extends Controller
                        'code' => $product->baseUnit->code,
                    ]);
                }
-   
+
                // Add the product's direct unit if available (product unit_id)
                if ($product->unit_id) {
                    $units->push([
@@ -57,7 +57,7 @@ class ProductController extends Controller
                        'code' => "Direct Unit Code", // Replace with actual code if available
                    ]);
                }
-   
+
                // Add variant units if any (variants have unit_id)
                foreach ($product->variants as $variant) {
                    if ($variant->unit_id) {
@@ -68,16 +68,16 @@ class ProductController extends Controller
                        ]);
                    }
                }
-   
+
                // Remove duplicates based on unit ID
                $product->units = $units->unique('id')->values(); // Ensure unique units by ID
-   
+
                return $product;
            });
-   
+
        return response()->json($products, 200);
    }
-   
+
 
    public function index()
    {
@@ -123,9 +123,9 @@ class ProductController extends Controller
                'updated_at' => $variant->product->updated_at,
             ];
          });
-      
+
       return response()->json($variants);
-      
+
    }
 
     public function show($id)
@@ -146,7 +146,7 @@ class ProductController extends Controller
          'code' => 'required|string|unique:products,code',
          'name' => 'required|string|max:255',
          'status' => 'boolean',
-         'image' => 'nullable|image|max:2048',
+         'image' => 'nullable|string',
          'barcode_symbology' => 'nullable|string|max:255',
          'category_id' => 'required|exists:categories,id',
          'supplier_id' => 'nullable|exists:suppliers,id',
@@ -155,6 +155,7 @@ class ProductController extends Controller
          'base_unit_id' => 'nullable|exists:units,id',
          'unit_id' => 'nullable|exists:units,id',
          'conversion_factor' => 'nullable|integer',
+         'alert_quantity' => 'nullable|integer',
          'promotion' => 'nullable|boolean',
          'discount' => 'required_if:promotion,true|numeric|min:0|max:100',
          'start_date' => 'nullable|required_if:promotion,true|date',
@@ -169,35 +170,35 @@ class ProductController extends Controller
          'variants.*.price' => 'required|numeric',
          'variants.*.unit_id' => 'nullable|exists:units,id',
          'variants.*.conversion_factor' => 'nullable|numeric',
-         'variants.*.alert_quantity' => 'nullable|numeric'
       ]);
 
-      if ($request->hasFile('image')) {
-         $imageName = time() . '.' . $request->file('image')->extension();
-         $request->file('image')->storeAs('public/images/', $imageName);
+    //   if ($request->hasFile('image')) {
+    //      $imageName = time() . '.' . $request->file('image')->extension();
+    //      $request->file('image')->storeAs('public/images/', $imageName);
 
-         $imagePath = storage_path('app/public/images/' . $imageName);
-         $resizedImagePath800x800 = storage_path('app/public/images/resized_' . $imageName);
-         $resizedImagePath150x150 = storage_path('app/public/thumbs/resized_' . $imageName);
+    //      $imagePath = storage_path('app/public/images/' . $imageName);
+    //      $resizedImagePath800x800 = storage_path('app/public/images/resized_' . $imageName);
+    //      $resizedImagePath150x150 = storage_path('app/public/thumbs/resized_' . $imageName);
 
-         if ($this->resizeImage($imagePath, $resizedImagePath800x800, 800, 800, false)) {
-               $validated['image'] = 'resized_' . $imageName;
-         } else {
-               return back()->withErrors(['image' => 'Failed to resize image.']);
-         }
+    //      if ($this->resizeImage($imagePath, $resizedImagePath800x800, 800, 800, false)) {
+    //            $validated['image'] = 'resized_' . $imageName;
+    //      } else {
+    //            return back()->withErrors(['image' => 'Failed to resize image.']);
+    //      }
 
-         if ($this->resizeImage($imagePath, $resizedImagePath150x150, 150, 150, false)) {
-               unlink($imagePath);
-         } else {
-               return back()->withErrors(['image' => 'Failed to resize image.']);
-         }
-      }
+    //      if ($this->resizeImage($imagePath, $resizedImagePath150x150, 150, 150, false)) {
+    //            unlink($imagePath);
+    //      } else {
+    //            return back()->withErrors(['image' => 'Failed to resize image.']);
+    //      }
+    //   }
 
       if($request->has('promotion') && $validated['promotion'] === false){
          $validated['discount'] = 0;
          $validated['start_date'] = null;
          $validated['end_date'] = null;
       }
+
 
       DB::beginTransaction();
 
@@ -222,7 +223,7 @@ class ProductController extends Controller
                   'previous_price' => $previousPrice,
                   'unit_id' => $variant['unit_id'] ?? null,
                   'conversion_factor' => $variant['conversion_factor'] ?? null,
-                  'alert_quantity' => $variant['variants'] ?? 0
+                  'alert_quantity' => $validated['alert_quantity'] ?? 0,
                ]);
          }
 
@@ -238,29 +239,36 @@ class ProductController extends Controller
     public function update(Request $request, $id)
     {
         $validated = $request->validate([
-            'type' => 'in:standard,service',
-            'code' => "string|unique:products,code,$id", // Ignore current product ID
-            'name' => 'string|max:255',
-            'status' => 'boolean',
-            'image' => 'nullable|image|max:2048', 
-            'delete_image' => 'nullable|boolean',
-            'barcode_symbology' => 'nullable|string|max:255',
-            'category_id' => 'exists:categories,id',
-            'supplier_id' => 'nullable|exists:suppliers,id',
-            'brand_id' => 'nullable|exists:brands,id',
-            'warehouse_id' => 'nullable|exists:warehouses,id',
-            'base_unit_id' => 'nullable|exists:units,id',
-            'unit_id' => 'nullable|exists:units,id',
-            'tax_rate' => 'nullable|numeric|max:100', 
-            'details' => 'nullable|string',
-            'is_perishable' => 'boolean',
-            'variants' => 'nullable|array|min:1', 
-            'variants.*.name' => 'string', 
-            'variants.*.costing' => 'numeric',
-            'variants.*.price' => 'numeric',
-            'variants.*.unit_id' => 'nullable|exists:units,id',
-            'variants.*.conversion_factor' => 'nullable|numeric'
-        ]);
+            'type' => 'sometimes|in:standard,service',
+            'code' => 'sometimes|string|unique:products,code',
+            'name' => 'sometimes|string|max:255',
+            'status' => 'sometimes|boolean',
+            'image' => 'sometimes|string',
+            'delete_image' => 'sometimes|boolean',
+            'barcode_symbology' => 'sometimes|string|max:255',
+            'category_id' => 'sometimes|exists:categories,id',
+            'supplier_id' => 'sometimes|exists:suppliers,id',
+            'brand_id' => 'sometimes|exists:brands,id',
+            'warehouse_id' => 'sometimes|exists:warehouses,id',
+            'base_unit_id' => 'sometimes|exists:units,id',
+            'unit_id' => 'sometimes|exists:units,id',
+            'conversion_factor' => 'sometimes|integer',
+            'alert_quantity' => 'sometimes|integer',
+            'promotion' => 'sometimes|boolean',
+            'discount' => 'required_if:promotion,true|numeric|min:0|max:100',
+            'start_date' => 'sometimes|required_if:promotion,true|date',
+            'end_date' => 'sometimes|required_if:promotion,true|date|after:start_date',
+            'tax_rate' => 'sometimes|numeric|max:100',
+            'details' => 'sometimes|string',
+            'is_perishable' => 'sometimes|boolean',
+            'variants' => 'sometimes|array|min:1',
+            'variants.*.name' => 'sometimes|string',
+            'variants.*.code' => 'sometimes|string',
+            'variants.*.costing' => 'sometimes|numeric',
+            'variants.*.price' => 'sometimes|numeric',
+            'variants.*.unit_id' => 'sometimes|exists:units,id',
+            'variants.*.conversion_factor' => 'sometimes|numeric',
+         ]);
 
         DB::beginTransaction();
 
@@ -269,38 +277,46 @@ class ProductController extends Controller
             $product = Product::findOrFail($id);
 
             // Handle image update
-            if ($request->hasFile('image')) {
-                $imageName = time() . '.' . $request->file('image')->extension();
-                $request->file('image')->storeAs('public/images', $imageName);
+            // if ($request->hasFile('image')) {
+            //     $imageName = time() . '.' . $request->file('image')->extension();
+            //     $request->file('image')->storeAs('public/images', $imageName);
 
-                $imagePath = storage_path('app/public/images/' . $imageName);
-                $resized800x800 = storage_path('app/public/images/resized_' . $imageName);
-                $resized150x150 = storage_path('app/public/thumbs/resized_' . $imageName);
+            //     $imagePath = storage_path('app/public/images/' . $imageName);
+            //     $resized800x800 = storage_path('app/public/images/resized_' . $imageName);
+            //     $resized150x150 = storage_path('app/public/thumbs/resized_' . $imageName);
 
-                if ($this->resizeImage($imagePath, $resized800x800, 800, 800, false)) {
-                    $validated['image'] = "resized_" . $imageName;
-                }
+            //     if ($this->resizeImage($imagePath, $resized800x800, 800, 800, false)) {
+            //         $validated['image'] = "resized_" . $imageName;
+            //     }
 
-                if ($this->resizeImage($imagePath, $resized150x150, 150, 150, false)) {
-                    unlink($imagePath);
-                } else {
-                    throw new Exception('Failed to resize image.');
-                }
+            //     if ($this->resizeImage($imagePath, $resized150x150, 150, 150, false)) {
+            //         unlink($imagePath);
+            //     } else {
+            //         throw new Exception('Failed to resize image.');
+            //     }
 
-                if (!empty($product->image) && file_exists(storage_path('app/public/images/' . $product->image))) {
+            //     if (!empty($product->image) && file_exists(storage_path('app/public/images/' . $product->image))) {
+            //         unlink(storage_path('app/public/images/' . $product->image));
+            //         unlink(storage_path('app/public/thumbs/' . $product->image));
+            //     }
+            // } elseif ($request->delete_image) {
+            //     if (!empty($product->image) && file_exists(storage_path('app/public/images/' . $product->image))) {
+            //         unlink(storage_path('app/public/images/' . $product->image));
+            //         unlink(storage_path('app/public/thumbs/' . $product->image));
+            //     }
+            //     $validated['image'] = null;
+            // } else {
+            //     $validated['image'] = $product->image;
+            // }
+
+            if($request->delete_image){
+                if(!empty($product->image) && file_exists(storage_path('app/public/images/' . $product->image))){
                     unlink(storage_path('app/public/images/' . $product->image));
                     unlink(storage_path('app/public/thumbs/' . $product->image));
+                    $validated['image'] = null;
                 }
-            } elseif ($request->delete_image) {
-                if (!empty($product->image) && file_exists(storage_path('app/public/images/' . $product->image))) {
-                    unlink(storage_path('app/public/images/' . $product->image));
-                    unlink(storage_path('app/public/thumbs/' . $product->image));
-                }
-                $validated['image'] = null;
-            } else {
-                $validated['image'] = $product->image;
+                
             }
-
             // Update product fields
             $product->fill($validated);
             $product->save();
@@ -317,7 +333,7 @@ class ProductController extends Controller
                             'costing' => $variant['costing'],
                             'price' => $variant['price'],
                             'unit_id' => $variant['unit_id'] ?? null,
-                            'conversion_factor' => $variant['conversion_factor'] ?? null,
+                            'conversion_factor' => $validated['conversion_factor'] ?? null,
                         ]
                     );
                 }
@@ -342,7 +358,7 @@ class ProductController extends Controller
 
     public function destroys(Request $request)
     {
-        
+
         $request->validate([
             'ids' => 'required|array',
             'ids.*' => 'exists:products,id',
