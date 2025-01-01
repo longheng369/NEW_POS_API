@@ -30,50 +30,9 @@ class ProductController extends Controller
 
    public function ProductSuggestionInPurchase()
    {
-       $products = Product::with(['baseUnit', 'variants'])
-           ->whereHas('category', function ($query) {
-               $query->where('status', true); // Ensure category is active
-           })
-           ->orderBy('created_at', 'desc')
-           ->get()
-           ->map(function ($product) {
-               // Initialize an array to collect units
-               $units = collect();
-
-               // Add the base unit if available
-               if ($product->baseUnit) {
-                   $units->push([
-                       'id' => $product->baseUnit->id,
-                       'name' => $product->baseUnit->name,
-                       'code' => $product->baseUnit->code,
-                   ]);
-               }
-
-               // Add the product's direct unit if available (product unit_id)
-               if ($product->unit_id) {
-                   $units->push([
-                       'id' => $product->unit_id,
-                       'name' => "Direct Unit", // Replace with actual name if available
-                       'code' => "Direct Unit Code", // Replace with actual code if available
-                   ]);
-               }
-
-               // Add variant units if any (variants have unit_id)
-               foreach ($product->variants as $variant) {
-                   if ($variant->unit_id) {
-                       $units->push([
-                           'id' => $variant->unit_id,
-                           'name' => "Variant Unit for {$variant->name}", // Replace with actual name if available
-                           'code' => "Variant Code for {$variant->code}", // Replace with actual code if available
-                       ]);
-                   }
-               }
-
-               // Remove duplicates based on unit ID
-               $product->units = $units->unique('id')->values(); // Ensure unique units by ID
-
-               return $product;
-           });
+    $products = Product::with(['baseUnit:id,name', 'variants:id,product_id,name'])
+    ->select('id', 'name', 'base_unit_id') // Include 'base_unit_id' for the relationship
+    ->get();
 
        return response()->json($products, 200);
    }
@@ -170,6 +129,7 @@ class ProductController extends Controller
          'variants.*.price' => 'required|numeric',
          'variants.*.unit_id' => 'nullable|exists:units,id',
          'variants.*.conversion_factor' => 'nullable|numeric',
+
       ]);
 
     //   if ($request->hasFile('image')) {
@@ -262,12 +222,15 @@ class ProductController extends Controller
             'details' => 'sometimes|string',
             'is_perishable' => 'sometimes|boolean',
             'variants' => 'sometimes|array|min:1',
+            'variants.*.id' => 'nullable|exists:variants,id',
             'variants.*.name' => 'sometimes|string',
             'variants.*.code' => 'sometimes|string',
             'variants.*.costing' => 'sometimes|numeric',
             'variants.*.price' => 'sometimes|numeric',
             'variants.*.unit_id' => 'sometimes|exists:units,id',
             'variants.*.conversion_factor' => 'sometimes|numeric',
+            'delete_variants' => 'nullable|array', // IDs of variants to delete
+            'delete_all_variants' => 'nullable|boolean', // Flag to delete all variants
          ]);
 
         DB::beginTransaction();
@@ -315,30 +278,52 @@ class ProductController extends Controller
                     unlink(storage_path('app/public/thumbs/' . $product->image));
                     $validated['image'] = null;
                 }
-                
+
             }
             // Update product fields
             $product->fill($validated);
             $product->save();
 
-            // Handle variants
+             // Handle variant deletions
+            if ($request->boolean('delete_all_variants')) {
+                // Delete all variants
+                $product->variants()->delete();
+            } elseif ($request->has('delete_variants')) {
+                // Delete specific variants by ID
+                $product->variants()->whereIn('id', $validated['delete_variants'])->delete();
+            }
+
+            // Handle updating specific variants or creating new ones
             if ($request->has('variants')) {
                 foreach ($validated['variants'] as $variant) {
-                    Variant::updateOrCreate(
-                        [
+                    // Check if the variant has an 'id' field
+                    if (isset($variant['id'])) {
+                        // Update the specific variant by ID
+                        $existingVariant = Variant::find($variant['id']);
+                        if ($existingVariant) {
+                            $existingVariant->update([
+                                'name' => $variant['name'],
+                                'code' => $variant['code'],
+                                'costing' => $variant['costing'],
+                                'price' => $variant['price'],
+                                'unit_id' => $variant['unit_id'] ?? null,
+                                'conversion_factor' => $variant['conversion_factor'] ?? null,
+                            ]);
+                        }
+                    } else {
+                        // If there's no ID, create a new variant
+                        Variant::create([
                             'product_id' => $product->id,
-                            'name' => $variant['name']
-                        ],
-                        [
+                            'name' => $variant['name'],
+                            'code' => $variant['code'],
                             'costing' => $variant['costing'],
                             'price' => $variant['price'],
                             'unit_id' => $variant['unit_id'] ?? null,
-                            'conversion_factor' => $validated['conversion_factor'] ?? null,
-                        ]
-                    );
+                            'conversion_factor' => $variant['conversion_factor'] ?? null,
+                        ]);
+                    }
                 }
             }
-
             DB::commit();
 
             return response()->json(['message' => 'Product updated successfully', 'product' => $product], 200);
