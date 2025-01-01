@@ -75,7 +75,7 @@ class PurchaseController extends Controller
     //             }
     //             // if unit id which already exist in product equal unit user input
     //             elseif ($product->unit_id === $item['unit_id']) {
-                    
+
     //                 $conversionFactor = $product->conversion_factor ?: 1;
     //                 $price_per_piece = $item['unit_price'] / $conversionFactor;
     //             } elseif (!empty($item['unit_id'])) {
@@ -84,11 +84,11 @@ class PurchaseController extends Controller
     //                 if ($unit && $unit->conversion_factor > 0) {
     //                     $price_per_piece = $item['unit_price'] / $unit->conversion_factor;
     //                 }
-    //             } 
+    //             }
 
     //             $discount = $item['discount'] ?? 0;
 
-    
+
 
     //             $unit_price = $item['unit_price'];
 
@@ -144,7 +144,7 @@ class PurchaseController extends Controller
         $validated = $request->validate([
             'supplier_id' => 'required|exists:suppliers,id',
             'user_id' => 'required|exists:users,id',
-            'tax' => 'nullable|numeric|min:0',
+            'tax_rate' => 'nullable|numeric|min:0',
             'discount' => 'nullable|numeric|min:0',
             'status' => 'nullable|string|in:pending,completed,canceled',
             'notes' => 'nullable|string|max:500',
@@ -183,14 +183,14 @@ class PurchaseController extends Controller
                 $unit = Unit::findOrFail($item['unit_id']);
 
                 // $unit = Unit::findOrFail($item['unit_id']);
-            
+
                 // Convert quantity to base unit
                 $quantityInBaseUnit = $this->unitConversionService->convertToBaseUnit(
                     $product->id,
                     $item['unit_id'],
                     $item['quantity']
                 );
-            
+
                 // Default price_per_piece and unit_price
                 if (isset($item['unit_price']) && $item['unit_price'] !== null) {
                     $price_per_piece = $variant->costing;
@@ -211,17 +211,17 @@ class PurchaseController extends Controller
                     $price_per_piece = $variant->costing;
                 }
 
-            
+
                 // If `unit_price` was not set explicitly, fallback to calculated price
                 if (empty($unit_price)) {
                     $unit_price = $price_per_piece;
                 }
-            
+
                 // Calculate subtotal
                 $discount = $item['discount'] ?? 0;
                 $quantity = $item['quantity'];
                 $subtotal = $quantity * $unit_price * (1 - $discount / 100);
-            
+
                 // Prepare purchase item data
                 $purchaseItemData = [
                     'purchase_id' => $purchase->id,
@@ -236,16 +236,16 @@ class PurchaseController extends Controller
                     'expiration_date' => $item['expiration_date'] ?? null,
                     'batch_number' => $item['batch_number'] ?? null,
                 ];
-            
+
                 // Create purchase item and update total
                 PurchaseItem::create($purchaseItemData);
                 $total += $subtotal;
-            
+
                 // Update stock for the variant
                 $variant->stock += $quantityInBaseUnit;
                 $variant->save();
             }
-            
+
 
             // Update the grand total in the purchase record
             $purchase->grand_total = $total;

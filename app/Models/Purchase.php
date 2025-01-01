@@ -13,11 +13,11 @@ class Purchase extends Model
     protected $fillable = [
         'supplier_id',
         'user_id',
-        'tax',
+        'tax_rate',
         'discount',
         'status',
         'grand_total',
         'notes',
     ];
-    
+
 }
