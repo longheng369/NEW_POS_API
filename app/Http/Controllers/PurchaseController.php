@@ -14,7 +14,6 @@ use Illuminate\Support\Facades\DB;
 use App\Services\UnitConversionService;
 use App\Services\GenerateReferenceNumber;
 
-
 class PurchaseController extends Controller
 {
     //
@@ -35,7 +34,6 @@ class PurchaseController extends Controller
             ->get();
         return response()->json(['data' => $purchases]);
     }
-
 
     public function store(Request $request)
     {
