@@ -30,7 +30,7 @@ class ProductController extends Controller
 
    public function ProductSuggestionInPurchase()
    {
-    $products = Product::with(['baseUnit:id,name', 'variants:id,product_id,name'])
+    $products = Product::with(['baseUnit:id,name', 'variants:id,product_id,name,costing'])
     ->select('id', 'name', 'base_unit_id') // Include 'base_unit_id' for the relationship
     ->get();
 

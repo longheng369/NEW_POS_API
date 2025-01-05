@@ -54,7 +54,9 @@ class DatabaseSeeder extends Seeder
             ['name' => 'pcs', 'code' => 'pcs'],
             ['name' => 'box', 'code' => 'box', 'base_unit_id' => 1, 'conversion_factor' => 10]
         ];
-        
+
+       
+
         foreach ($units as $unit) {
             DB::table('units')->insert([
                 'name' => $unit['name'],
