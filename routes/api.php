@@ -61,7 +61,11 @@ Route::put('/products/{id}', [ProductController::class, 'update']);
 Route::delete('/products/{id}', [ProductController::class, 'destroy']);
 Route::delete('/products/multiple-delete', [ProductController::class, 'destroys']);
 
-Route::post('purchases', [PurchaseController::class, 'store']);
+Route::get('/purchases', [PurchaseController::class, 'index']);
+Route::post('/purchases', [PurchaseController::class, 'store']);
+Route::put('/purchases/{id}', [PurchaseController::class, 'update']);
+Route::put('/purchases/{id}/payments', [PurchaseController::class, 'updatePayment']);
+
 
 Route::get('/payments', [PaymentController::class, 'index']);
 Route::get('/payments/{id}', [PaymentController::class, 'show']);
@@ -89,5 +93,7 @@ Route::get('/warehouses/{id}', [WarehouseController::class, 'show']);
 Route::post('/warehouses', [WarehouseController::class, 'store']);
 Route::put('/warehouses/{id}', [WarehouseController::class, 'update']);
 Route::delete('/warehouses/{id}', [WarehouseController::class, 'destroy']);
+
+
 
 Route::get('/settings', [SettingController::class, 'index']);

@@ -19,6 +19,8 @@ return new class extends Migration
             $table->decimal('discount', 8, 2)->nullable(); // Discount applied, if any
             $table->string('status')->default('pending'); // Status of the purchase (pending, completed)
             $table->decimal('grand_total', 10, 2)->default(0);
+            $table->date('date');
+            $table->string('reference_number');
             $table->string('notes')->nullable();
             $table->timestamps();
 
