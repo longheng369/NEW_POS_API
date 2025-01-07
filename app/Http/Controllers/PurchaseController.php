@@ -456,4 +456,34 @@ class PurchaseController extends Controller
             return response()->json(['message' => 'Failed to update payments', 'error' => $e->getMessage()], 500);
         }
     }
+
+    public function destroy($id)
+    {
+        DB::beginTransaction();
+
+        try {
+            $purchase = Purchase::findOrFail($id);
+
+            // Revert stock for existing items
+            foreach ($purchase->items as $item) {
+                $variant = Variant::find($item->variant_id);
+                $variant->stock -= $item->quantity; // Subtract stock
+                $variant->save();
+            }
+
+            // Delete related payments and items
+            $purchase->payments()->delete();
+            $purchase->items()->delete();
+
+            // Delete the purchase record
+            $purchase->delete();
+
+            DB::commit();
+
+            return response()->json(['message' => 'Purchase deleted successfully'], 200);
+        } catch (Exception $e) {
+            DB::rollBack();
+            return response()->json(['message' => 'Failed to delete purchase', 'error' => $e->getMessage()], 500);
+        }
+    }
 }

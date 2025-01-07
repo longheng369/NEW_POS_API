@@ -66,6 +66,7 @@ Route::get('/purchases/{id}', [PurchaseController::class, 'show']);
 Route::post('/purchases', [PurchaseController::class, 'store']);
 Route::put('/purchases/{id}', [PurchaseController::class, 'update']);
 Route::put('/purchases/{id}/payments', [PurchaseController::class, 'updatePayment']);
+Route::delete('/purchases/{id}', [PurchaseController::class, 'destroy']);
 
 
 Route::get('/payments', [PaymentController::class, 'index']);
