@@ -30,8 +30,36 @@ class PurchaseController extends Controller
     public function index()
     {
         $purchases = Purchase::with(['supplier:id,name', 'user:id,name', 'payments'])
-            ->select(['date', 'reference_number','status'])
-            ->get();
+            ->get()
+            ->map(function ($purchase) {
+                // Calculate total payment
+                $totalPaid = $purchase->payments->sum('amount');
+                $grandTotal = $purchase->grand_total;
+                $balance = $grandTotal - $totalPaid;
+
+                // Determine payment status
+                $paymentStatus = 'due';
+                if ($totalPaid > 0 && $totalPaid < $grandTotal) {
+                    $paymentStatus = 'partial';
+                } elseif ($totalPaid == $grandTotal) {
+                    $paymentStatus = 'complete';
+                }
+
+                return [
+                    'id' => $purchase->id,
+                    'supplier_name' => $purchase->supplier->name,
+                    'reference_number' => $purchase->reference_number,
+                    'date_of_purchase' => $purchase->date,
+                    'payment_status' => $paymentStatus,
+                    'payment_methods' => $purchase->payments->pluck('payment_method')->unique()->values(),
+                    'user_name' => $purchase->user->name,
+                    'grand_total' => $grandTotal,
+                    'money_paid' => $totalPaid,
+                    'balance' => $balance,
+                    'purchase_status' => $purchase->status
+                ];
+            });
+
         return response()->json(['data' => $purchases]);
     }
 
@@ -165,24 +193,23 @@ class PurchaseController extends Controller
     }
 
     private function storePayments(array $payments, int $userId, Purchase $purchase)
-{
-    foreach ($payments as &$payment) {
-        $payment['user_id'] = $userId;
-        $payment['purchase_id'] = $purchase->id;
-        $payment['status'] = $payment['status'] ?? 'pending';
-        $payment['payment_date'] = $payment['payment_date'] ?? now();
-    }
+    {
+        foreach ($payments as &$payment) {
+            $payment['user_id'] = $userId;
+            $payment['purchase_id'] = $purchase->id;
+            $payment['status'] = $payment['status'] ?? 'pending';
+            $payment['payment_date'] = $payment['payment_date'] ?? now();
+        }
 
-    try {
-        // Create multiple payments associated with the purchase
-        $purchase->payments()->createMany($payments);
-    } catch (\Exception $e) {
-        // Log the error for debugging
-        \Log::error("Error storing payments: " . $e->getMessage(), ['payments' => $payments]);
-        throw new \Exception("Failed to store payments");
+        try {
+            // Create multiple payments associated with the purchase
+            $purchase->payments()->createMany($payments);
+        } catch (\Exception $e) {
+            // Log the error for debugging
+            \Log::error('Error storing payments: ' . $e->getMessage(), ['payments' => $payments]);
+            throw new \Exception('Failed to store payments');
+        }
     }
-}
-
 
     private function validateStoreRequest(Request $request)
     {
