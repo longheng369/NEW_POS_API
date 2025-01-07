@@ -29,10 +29,15 @@ class PurchaseController extends Controller
 
     public function index()
     {
-        $purchases = Purchase::with(['supplier:id,name', 'user:id,name'])
-            ->select(['date', 'reference_no'])
+        $purchases = Purchase::with(['supplier:id,name', 'user:id,name', 'payments'])
+            ->select(['date', 'reference_number','status'])
             ->get();
         return response()->json(['data' => $purchases]);
+    }
+
+    public function show($id)
+    {
+        $purchase = Purchase::with(['supplier', 'user', 'payments']);
     }
 
     public function store(Request $request)
@@ -160,13 +165,24 @@ class PurchaseController extends Controller
     }
 
     private function storePayments(array $payments, int $userId, Purchase $purchase)
-    {
-        foreach ($payments as &$payment) {
-            $payment['user_id'] = $userId;
-        }
-
-        $purchase->payments()->createMany($payments);
+{
+    foreach ($payments as &$payment) {
+        $payment['user_id'] = $userId;
+        $payment['purchase_id'] = $purchase->id;
+        $payment['status'] = $payment['status'] ?? 'pending';
+        $payment['payment_date'] = $payment['payment_date'] ?? now();
     }
+
+    try {
+        // Create multiple payments associated with the purchase
+        $purchase->payments()->createMany($payments);
+    } catch (\Exception $e) {
+        // Log the error for debugging
+        \Log::error("Error storing payments: " . $e->getMessage(), ['payments' => $payments]);
+        throw new \Exception("Failed to store payments");
+    }
+}
+
 
     private function validateStoreRequest(Request $request)
     {
@@ -193,169 +209,6 @@ class PurchaseController extends Controller
             'payments.*.payment_date' => 'nullable|date',
         ]);
     }
-
-    // public function update(Request $request, $id)
-    // {
-    //     $validated = $request->validate([
-    //         'supplier_id' => 'sometimes|required|exists:suppliers,id',
-    //         'user_id' => 'sometimes|required|exists:users,id',
-    //         'tax_rate' => 'sometimes|nullable|numeric|min:0',
-    //         'discount' => 'sometimes|nullable|numeric|min:0',
-    //         'status' => 'sometimes|nullable|string|in:pending,completed,canceled',
-    //         'notes' => 'sometimes|nullable|string|max:500',
-    //         'date' => 'sometimes|nullable|date',
-    //         'items' => 'sometimes|required|array|min:1',
-    //         'items.*.variant_id' => 'sometimes|required|exists:variants,id',
-    //         'items.*.product_id' => 'sometimes|required|exists:products,id',
-    //         'items.*.unit_id' => 'sometimes|required|exists:units,id',
-    //         'items.*.quantity' => 'sometimes|required|integer|min:1',
-    //         'items.*.unit_price' => 'sometimes|nullable|numeric|min:0',
-    //         'items.*.discount' => 'sometimes|nullable|numeric|min:0|max:100',
-    //         'items.*.expiration_date' => 'sometimes|nullable|date|after_or_equal:today',
-    //         'items.*.batch_number' => 'sometimes|nullable|string|max:255',
-    //         'payments' => 'sometimes|nullable|array',
-    //         'payments.*.amount' => 'sometimes|required|numeric|min:0',
-    //         'payments.*.payment_method' => 'sometimes|required|string|in:cash,credit,aba',
-    //         'payments.*.payment_date' => 'sometimes|nullable|date',
-    //         'payments.*.user_id' => 'sometimes|required|exists:users,id',
-    //         'payments.*.payment_id' => 'nullable|exists:payments,id',
-    //     ]);
-
-    //     DB::beginTransaction();
-
-    //     try {
-    //         // Find the existing purchase record
-    //         $purchase = Purchase::findOrFail($id);
-    //         $purchase->update($validated);
-
-    //         if (isset($validated['items'])) {
-    //             $total = 0;
-
-    //             // Delete existing purchase items
-    //             $purchase->items()->delete();
-
-    //             // Loop through items and calculate subtotal for each
-    //             foreach ($validated['items'] as $item) {
-    //                 $variant = Variant::where('id', $item['variant_id'])
-    //                     ->where('product_id', $item['product_id'])
-    //                     ->first();
-
-    //                 if (!$variant) {
-    //                     throw new Exception("The variant ID {$item['variant_id']} does not belong to the product ID {$item['product_id']}.");
-    //                 }
-
-    //                 // Fetch product and unit
-    //                 $product = Product::findOrFail($item['product_id']);
-    //                 $unit = Unit::findOrFail($item['unit_id']);
-
-    //                 // Convert quantity to base unit
-    //                 $quantityInBaseUnit = $this->unitConversionService->convertToBaseUnit(
-    //                     $product->id,
-    //                     $item['unit_id'],
-    //                     $item['quantity']
-    //                 );
-
-    //                 // Default price_per_piece and unit_price
-    //                 if (isset($item['unit_price']) && $item['unit_price'] !== null) {
-    //                     $price_per_piece = $variant->costing;
-    //                     $unit_price = $item['unit_price']; // Use user-provided value
-    //                 } elseif ($product->base_unit_id === $item['unit_id']) {
-    //                     $price_per_piece = $variant->costing;
-    //                     $unit_price = $variant->costing;
-    //                 } elseif ($product->unit_id === $item['unit_id']) {
-    //                     $conversionFactor = $product->conversion_factor ?: 1;
-    //                     $price_per_piece = $variant->costing;
-    //                     $unit_price = $variant->costing * $conversionFactor;
-    //                 } elseif ($unit->conversion_factor > 0) {
-    //                     $price_per_piece = $variant->costing / $unit->conversion_factor;
-    //                     $unit_price = $variant->costing * $unit->conversion_factor;
-    //                 } else {
-    //                     // Fallback to costing if no explicit unit_price is provided or calculated
-    //                     $unit_price = $variant->costing;
-    //                     $price_per_piece = $variant->costing;
-    //                 }
-
-    //                 // If `unit_price` was not set explicitly, fallback to calculated price
-    //                 if (empty($unit_price)) {
-    //                     $unit_price = $price_per_piece;
-    //                 }
-
-    //                 // Calculate subtotal
-    //                 $discount = $item['discount'] ?? 0;
-    //                 $quantity = $item['quantity'];
-    //                 $subtotal = $quantity * $unit_price * (1 - $discount / 100);
-
-    //                 // Prepare purchase item data
-    //                 $purchaseItemData = [
-    //                     'purchase_id' => $purchase->id,
-    //                     'product_id' => $item['product_id'],
-    //                     'variant_id' => $item['variant_id'],
-    //                     'unit_id' => $item['unit_id'],
-    //                     'quantity' => $quantityInBaseUnit,
-    //                     'unit_price' => $unit_price,
-    //                     'discount' => $discount,
-    //                     'subtotal' => $subtotal,
-    //                     'price_per_piece' => $price_per_piece,
-    //                     'expiration_date' => $item['expiration_date'] ?? null,
-    //                     'batch_number' => $item['batch_number'] ?? null,
-    //                 ];
-
-    //                 // Create purchase item and update total
-    //                 PurchaseItem::create($purchaseItemData);
-    //                 $total += $subtotal;
-
-    //                 // Update stock for the variant
-    //                 $variant->stock += $quantityInBaseUnit;
-    //                 $variant->save();
-    //             }
-
-    //             // Update the grand total in the purchase record
-    //             $purchase->grand_total = $total;
-    //             $purchase->save();
-    //         }
-
-    //         if (isset($validated['payments'])) {
-    //             $totalPaid = $purchase->payments()->sum('amount');
-    //             $newPaymentsTotal = array_sum(array_column($validated['payments'], 'amount'));
-
-    //             // Ensure payments do not exceed the purchase debt
-    //             if ($totalPaid + $newPaymentsTotal > $purchase->grand_total) {
-    //                 throw new Exception('The total payment amount exceeds the purchase debt.');
-    //             }
-
-    //             foreach ($validated['payments'] as $paymentData) {
-    //                 if (isset($paymentData['payment_id'])) {
-    //                     // Update existing payment
-    //                     $payment = Payment::findOrFail($paymentData['payment_id']);
-    //                     $payment->update([
-    //                         'payment_method' => $paymentData['payment_method'],
-    //                         'amount' => $paymentData['amount'],
-    //                         'payment_date' => $paymentData['payment_date'] ?? $payment->payment_date,
-    //                     ]);
-    //                 } else {
-    //                     // Create new payment
-    //                     $purchase->payments()->create([
-    //                         'amount' => $paymentData['amount'],
-    //                         'payment_method' => $paymentData['payment_method'],
-    //                         'payment_date' => $paymentData['payment_date'],
-    //                         'user_id' => $paymentData['user_id'],
-    //                     ]);
-    //                 }
-    //             }
-    //         }
-
-    //         DB::commit();
-
-    //         return response()->json([
-    //             'message' => 'Purchase updated successfully',
-    //             'data' => $purchase
-    //         ], 200);
-
-    //     } catch (Exception $e) {
-    //         DB::rollBack();
-    //         return response()->json(['message' => 'Failed to update purchase', 'error' => $e->getMessage()], 500);
-    //     }
-    // }
 
     public function update(Request $request, $id)
     {
