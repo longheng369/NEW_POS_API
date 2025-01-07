@@ -65,7 +65,8 @@ class PurchaseController extends Controller
 
     public function show($id)
     {
-        $purchase = Purchase::with(['supplier', 'user', 'payments']);
+        $purchase = Purchase::with(['supplier', 'user', 'payments', 'items'])->findOrFail($id);
+        return response()->json(['data' => $purchase]);
     }
 
     public function store(Request $request)
